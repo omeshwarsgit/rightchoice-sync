@@ -53,55 +53,48 @@ def click_with_retry(page, locator, *, timeout: int = 60_000, retries: int = 3):
     raise last_error
 
 
-def find_review_management_menu(page):
-    """Return the most stable locator for the Review Management navigation item."""
-    candidates = [
-        page.get_by_role("button", name=re.compile(r"Reviews? Management", re.I)),
-        page.get_by_role("link", name=re.compile(r"Reviews? Management", re.I)),
-        page.get_by_text(re.compile(r"Reviews? Management", re.I), exact=False),
-    ]
-    for locator in candidates:
-        if locator.count():
-            return locator
-    return page.locator("button, a, li, div").filter(has_text=re.compile(r"Reviews? Management", re.I))
+def find_visible_menu_item(page, text_pattern: str):
+    """Return the first visible element matching a text pattern in the sidebar/menu area."""
+    candidates = page.locator("button, a, div, li").filter(has_text=re.compile(text_pattern, re.I))
+    for index in range(candidates.count()):
+        candidate = candidates.nth(index)
+        try:
+            if candidate.is_visible():
+                return candidate
+        except Exception:
+            continue
+    return None
 
 
 def click_sidebar_review_management(page):
-    """Click the parent/child sidebar items for the duplicated Review Management labels."""
-    # First click the parent menu item (the left-side accordion item)
-    parent_candidates = [
-        page.get_by_role("button", name=re.compile(r"^Reviews? Management$", re.I)),
-        page.get_by_role("link", name=re.compile(r"^Reviews? Management$", re.I)),
-        page.get_by_text(re.compile(r"^Reviews? Management$", re.I), exact=True),
-        page.locator("button, a, div").filter(has_text=re.compile(r"^Reviews? Management$", re.I)),
-    ]
-    parent = next((loc for loc in parent_candidates if loc.count()), None)
-    if parent is None:
-        raise RuntimeError("Could not find parent Reviews Management menu item in left sidebar")
+    """Click the parent Reviews Management item first, then the nested Review Management item."""
+    # Prefer the left navigation text exactly matching the parent label.
+    parent = find_visible_menu_item(page, r"^Reviews\s+Management$")
+    if parent is not None:
+        log("Clicking parent Reviews Management menu item")
+        click_with_retry(page, parent)
+        page.wait_for_timeout(1500)
 
-    click_with_retry(page, parent)
-    page.wait_for_timeout(1500)
-
-    # Then click the child submenu item; if duplicates exist, prefer the second match.
-    child_candidates = [
-        page.get_by_role("button", name=re.compile(r"^Review Management$", re.I)),
-        page.get_by_role("link", name=re.compile(r"^Review Management$", re.I)),
-        page.get_by_text(re.compile(r"^Review Management$", re.I), exact=True),
-    ]
-    child = next((loc for loc in child_candidates if loc.count()), None)
+    # Then target the nested child item, which is the actual page route.
+    child = find_visible_menu_item(page, r"^Review\s+Management$")
     if child is not None:
-        if child.count() > 1:
-            child.nth(1).click(timeout=60_000)
-        else:
-            child.first.click(timeout=60_000)
+        log("Clicking child Review Management menu item")
+        click_with_retry(page, child)
         return
 
-    # Fallback: click the second text match if the parent and child share the same label.
-    matches = page.get_by_text(re.compile(r"Review Management", re.I), exact=False)
-    if matches.count() > 1:
-        matches.nth(1).click(timeout=60_000)
-    else:
-        matches.first.click(timeout=60_000)
+    # Fallback when there are duplicate matches or the child is not visible immediately.
+    all_matches = page.locator("button, a, div, li").filter(has_text=re.compile(r"Review\s+Management", re.I))
+    for index in range(all_matches.count()):
+        candidate = all_matches.nth(index)
+        try:
+            if candidate.is_visible():
+                log(f"Fallback click on Review Management match #{index}")
+                candidate.click(timeout=60_000)
+                return
+        except Exception:
+            continue
+
+    raise RuntimeError("Could not find a visible Review Management item in the sidebar")
 
 
 def main() -> int:
