@@ -94,6 +94,7 @@ def main() -> int:
         else:
             page.keyboard.press("Escape")
         page.wait_for_load_state("networkidle")
+                page.screenshot(path="output/after_login.png")
 
         # --- 4. Set the date filter to "yesterday only" ---
         log("Setting date filter...")
