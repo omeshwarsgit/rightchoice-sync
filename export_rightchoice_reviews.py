@@ -31,12 +31,10 @@ def log(msg: str) -> None:
 
 
 def target_date() -> date:
-    # The daily job always pulls "yesterday" relative to when it runs.
     return date.today() - timedelta(days=1)
 
 
 def date_button_text(d: date) -> str:
-    # Matches the site's calendar button labels, e.g. "21 September 2026"
     return f"{d.day} {d.strftime('%B')} {d.year}"
 
 
@@ -66,19 +64,20 @@ def main() -> int:
         page.get_by_placeholder("Email Address").fill(email)
         page.get_by_placeholder("Password").fill(password)
         page.get_by_role("button", name="Sign In").click()
-        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(5000)
+        page.screenshot(path="output/after_login.png")
 
-                # --- 2. Navigate to Reviews Management -> Review Management ---
+        # --- 2. Navigate to Reviews Management -> Review Management ---
         log("Navigating to Review Management...")
         page.get_by_text("Reviews Management", exact=True).first.click()
         page.wait_for_timeout(2000)
+        page.screenshot(path="output/after_menu_click.png")
         page.get_by_text("Review Management", exact=True).first.click()
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(3000)
 
         # Some installs land on "Dashboard & Sentiment Analysis" first;
-        # make sure the "Review Management" tab (with the review-count badge)
-        # is the active one.
+        # make sure the "Review Management" tab is the active one.
         review_mgmt_tab = page.get_by_role("tab", name=re.compile(r"^Review Management"))
         if review_mgmt_tab.count():
             review_mgmt_tab.first.click()
@@ -96,7 +95,6 @@ def main() -> int:
         else:
             page.keyboard.press("Escape")
         page.wait_for_load_state("networkidle")
-                page.screenshot(path="output/after_login.png")
 
         # --- 4. Set the date filter to "yesterday only" ---
         log("Setting date filter...")
@@ -105,12 +103,11 @@ def main() -> int:
 
         date_btn = page.get_by_role("button", name=day_label, exact=True)
         if not date_btn.count():
-            # Target date rolled into the previous month view; step back once.
             prev_arrow = page.locator("button").filter(has_text=re.compile("^$")).first
             prev_arrow.click()
             date_btn = page.get_by_role("button", name=day_label, exact=True)
         date_btn.first.click()
-        date_btn.first.click()  # same day for both start and end
+        date_btn.first.click()
 
         page.get_by_role("button", name="Apply Filter").first.click()
         page.wait_for_load_state("networkidle")
