@@ -53,6 +53,19 @@ def click_with_retry(page, locator, *, timeout: int = 60_000, retries: int = 3):
     raise last_error
 
 
+def find_review_management_menu(page):
+    """Return the most stable locator for the Review Management navigation item."""
+    candidates = [
+        page.get_by_role("button", name=re.compile(r"Reviews? Management", re.I)),
+        page.get_by_role("link", name=re.compile(r"Reviews? Management", re.I)),
+        page.get_by_text(re.compile(r"Reviews? Management", re.I), exact=False),
+    ]
+    for locator in candidates:
+        if locator.count():
+            return locator
+    return page.locator("button, a, li, div").filter(has_text=re.compile(r"Reviews? Management", re.I))
+
+
 def main() -> int:
     email = os.environ.get("RIGHTCHOICE_EMAIL")
     password = os.environ.get("RIGHTCHOICE_PASSWORD")
@@ -71,60 +84,61 @@ def main() -> int:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(accept_downloads=True)
         page = context.new_page()
-        page.set_default_timeout(30_000)
+        page.set_default_timeout(60_000)
+        page.set_default_navigation_timeout(60_000)
 
         # --- 1. Login ---
         log("Logging in...")
-        page.goto(LOGIN_URL)
+        page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60_000)
         page.get_by_placeholder("Email Address").fill(email)
         page.get_by_placeholder("Password").fill(password)
-        page.get_by_role("button", name="Sign In").click()
-        page.wait_for_load_state("networkidle", timeout=30_000)
+        page.get_by_role("button", name="Sign In").click(timeout=60_000)
+        page.wait_for_load_state("networkidle", timeout=60_000)
         page.wait_for_timeout(5000)
         page.screenshot(path="output/after_login.png")
 
         # --- 2. Navigate to Reviews Management -> Review Management ---
         log("Navigating to Review Management...")
-        menu_item = page.locator("button, a, div, li").filter(has_text="Reviews Management")
-        tab_item = page.locator("button, a, div, li").filter(has_text="Review Management")
+        menu_item = find_review_management_menu(page)
 
         try:
             click_with_retry(page, menu_item)
         except Exception:
             page.reload()
-            page.wait_for_load_state("networkidle", timeout=30_000)
+            page.wait_for_load_state("networkidle", timeout=60_000)
             click_with_retry(page, menu_item)
 
         page.wait_for_timeout(2000)
         page.screenshot(path="output/after_menu_click.png")
 
-        try:
-            click_with_retry(page, tab_item)
-        except Exception:
-            page.get_by_role("tab", name=re.compile(r"^Review Management")).first.click(timeout=60_000)
+        tab_item = page.get_by_role("tab", name=re.compile(r"Review Management", re.I))
+        if tab_item.count():
+            tab_item.first.click(timeout=60_000)
+        else:
+            page.get_by_text(re.compile(r"Review Management", re.I), exact=False).first.click(timeout=60_000)
 
-        page.wait_for_load_state("networkidle", timeout=30_000)
+        page.wait_for_load_state("networkidle", timeout=60_000)
         page.wait_for_timeout(3000)
 
         # Some installs land on "Dashboard & Sentiment Analysis" first;
         # make sure the "Review Management" tab is the active one.
-        review_mgmt_tab = page.get_by_role("tab", name=re.compile(r"^Review Management"))
+        review_mgmt_tab = page.get_by_role("tab", name=re.compile(r"^Review Management", re.I))
         if review_mgmt_tab.count():
             review_mgmt_tab.first.click(timeout=60_000)
-            page.wait_for_load_state("networkidle", timeout=30_000)
+            page.wait_for_load_state("networkidle", timeout=60_000)
 
         # --- 3. Make sure "All Locations" is selected ---
         log("Confirming all locations are selected...")
         page.get_by_text(re.compile(r"Locations Selected")).first.click(timeout=60_000)
-        all_locations_checkbox = page.get_by_role("checkbox", name=re.compile("All Locations"))
+        all_locations_checkbox = page.get_by_role("checkbox", name=re.compile("All Locations", re.I))
         if all_locations_checkbox.count() and not all_locations_checkbox.first.is_checked():
             all_locations_checkbox.first.click(timeout=60_000)
-        apply_btn = page.get_by_role("button", name=re.compile(r"^(Select|Apply) "))
+        apply_btn = page.get_by_role("button", name=re.compile(r"^(Select|Apply) ", re.I))
         if apply_btn.count():
             apply_btn.first.click(timeout=60_000)
         else:
             page.keyboard.press("Escape")
-        page.wait_for_load_state("networkidle", timeout=30_000)
+        page.wait_for_load_state("networkidle", timeout=60_000)
 
         # --- 4. Set the date filter to "yesterday only" ---
         log("Setting date filter...")
@@ -133,14 +147,15 @@ def main() -> int:
 
         date_btn = page.get_by_role("button", name=day_label, exact=True)
         if not date_btn.count():
-            prev_arrow = page.locator("button").filter(has_text=re.compile("^$")).first
-            prev_arrow.click(timeout=60_000)
+            prev_arrow = page.locator("button").filter(has_text=re.compile("^$"))
+            if prev_arrow.count():
+                prev_arrow.first.click(timeout=60_000)
             date_btn = page.get_by_role("button", name=day_label, exact=True)
         date_btn.first.click(timeout=60_000)
         date_btn.first.click(timeout=60_000)
 
         page.get_by_role("button", name="Apply Filter").first.click(timeout=60_000)
-        page.wait_for_load_state("networkidle", timeout=30_000)
+        page.wait_for_load_state("networkidle", timeout=60_000)
 
         # --- 5. Export ---
         log("Triggering export...")
