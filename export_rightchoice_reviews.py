@@ -68,11 +68,13 @@ def main() -> int:
         page.get_by_role("button", name="Sign In").click()
         page.wait_for_load_state("networkidle")
 
-        # --- 2. Navigate to Reviews Management -> Review Management ---
+                # --- 2. Navigate to Reviews Management -> Review Management ---
         log("Navigating to Review Management...")
         page.get_by_text("Reviews Management", exact=True).first.click()
-        page.get_by_role("link", name="Review Management", exact=True).click()
+        page.wait_for_timeout(2000)
+        page.get_by_text("Review Management", exact=True).first.click()
         page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(3000)
 
         # Some installs land on "Dashboard & Sentiment Analysis" first;
         # make sure the "Review Management" tab (with the review-count badge)
