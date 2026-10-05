@@ -56,14 +56,14 @@ def click_with_retry(page, locator, *, timeout: int = 60_000, retries: int = 3):
 def find_review_management_menu(page):
     """Return the most stable locator for the Review Management navigation item."""
     candidates = [
-        page.get_by_role("button", name=re.compile(r"Reviews? Management", re.I)),
-        page.get_by_role("link", name=re.compile(r"Reviews? Management", re.I)),
-        page.get_by_text(re.compile(r"Reviews? Management", re.I), exact=False),
+        page.get_by_role("button", name=re.compile(r"Reviews?\s*Management", re.I)),
+        page.get_by_role("link", name=re.compile(r"Reviews?\s*Management", re.I)),
+        page.get_by_text(re.compile(r"Reviews?\s*Management", re.I), exact=False),
     ]
     for locator in candidates:
         if locator.count():
             return locator
-    return page.locator("button, a, li, div").filter(has_text=re.compile(r"Reviews? Management", re.I))
+    return page.locator("button, a, li, div").filter(has_text=re.compile(r"Reviews?\s*Management", re.I))
 
 
 def main() -> int:
@@ -99,13 +99,17 @@ def main() -> int:
 
         # --- 2. Navigate to Reviews Management -> Review Management ---
         log("Navigating to Review Management...")
-        menu_item = find_review_management_menu(page)
+        page.wait_for_load_state("networkidle", timeout=60_000)
+        page.wait_for_timeout(5000)
 
+        menu_item = find_review_management_menu(page)
         try:
             click_with_retry(page, menu_item)
         except Exception:
             page.reload()
             page.wait_for_load_state("networkidle", timeout=60_000)
+            page.wait_for_timeout(5000)
+            menu_item = find_review_management_menu(page)
             click_with_retry(page, menu_item)
 
         page.wait_for_timeout(2000)
@@ -115,7 +119,11 @@ def main() -> int:
         if tab_item.count():
             tab_item.first.click(timeout=60_000)
         else:
-            page.get_by_text(re.compile(r"Review Management", re.I), exact=False).first.click(timeout=60_000)
+            review_text = page.get_by_text(re.compile(r"Review Management", re.I), exact=False)
+            if review_text.count():
+                review_text.first.click(timeout=60_000)
+            else:
+                raise RuntimeError("Review Management menu/tab was not found after login.")
 
         page.wait_for_load_state("networkidle", timeout=60_000)
         page.wait_for_timeout(3000)
