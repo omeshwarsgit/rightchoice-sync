@@ -53,6 +53,17 @@ def click_with_retry(page, locator, *, timeout: int = 60_000, retries: int = 3):
     raise last_error
 
 
+def navigable_review_links(page):
+    return [
+        page.get_by_role("link", name=re.compile(r"Review Management|Reviews Management", re.I)),
+        page.get_by_role("button", name=re.compile(r"Review Management|Reviews Management", re.I)),
+        page.get_by_text(re.compile(r"Review Management|Reviews Management", re.I), exact=False),
+        page.locator("a, button, [role='button'], [role='menuitem'], [role='tab']").filter(
+            has_text=re.compile(r"Review Management|Reviews Management", re.I)
+        ),
+    ]
+
+
 def main() -> int:
     email = os.environ.get("RIGHTCHOICE_EMAIL")
     password = os.environ.get("RIGHTCHOICE_PASSWORD")
@@ -71,47 +82,53 @@ def main() -> int:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(accept_downloads=True)
         page = context.new_page()
-        page.set_default_timeout(30_000)
+        page.set_default_timeout(60_000)
 
         # --- 1. Login ---
         log("Logging in...")
-        page.goto(LOGIN_URL)
+        page.goto(LOGIN_URL, wait_until="domcontentloaded")
         page.get_by_placeholder("Email Address").fill(email)
         page.get_by_placeholder("Password").fill(password)
         page.get_by_role("button", name="Sign In").click()
-        page.wait_for_load_state("networkidle", timeout=30_000)
+        page.wait_for_load_state("networkidle", timeout=60_000)
         page.wait_for_timeout(5000)
         page.screenshot(path="output/after_login.png")
 
-        # --- 2. Navigate to Reviews Management -> Review Management ---
+        # --- 2. Navigate to Review Management (left-nav menu item in the current UI) ---
         log("Navigating to Review Management...")
-        menu_item = page.locator("button, a, div, li").filter(has_text="Reviews Management")
-        tab_item = page.locator("button, a, div, li").filter(has_text="Review Management")
-
-        try:
-            click_with_retry(page, menu_item)
-        except Exception:
-            page.reload()
-            page.wait_for_load_state("networkidle", timeout=30_000)
-            click_with_retry(page, menu_item)
-
-        page.wait_for_timeout(2000)
-        page.screenshot(path="output/after_menu_click.png")
-
-        try:
-            click_with_retry(page, tab_item)
-        except Exception:
-            page.get_by_role("tab", name=re.compile(r"^Review Management")).first.click(timeout=60_000)
-
-        page.wait_for_load_state("networkidle", timeout=30_000)
+        page.wait_for_load_state("networkidle", timeout=60_000)
         page.wait_for_timeout(3000)
 
-        # Some installs land on "Dashboard & Sentiment Analysis" first;
-        # make sure the "Review Management" tab is the active one.
-        review_mgmt_tab = page.get_by_role("tab", name=re.compile(r"^Review Management"))
-        if review_mgmt_tab.count():
-            review_mgmt_tab.first.click(timeout=60_000)
-            page.wait_for_load_state("networkidle", timeout=30_000)
+        clicked = False
+        for locator in navigable_review_links(page):
+            try:
+                if locator.count():
+                    locator.first.click(timeout=60_000)
+                    clicked = True
+                    break
+            except Exception:
+                continue
+
+        if not clicked:
+            log("Review Management menu item not found; reloading and retrying once...")
+            page.reload()
+            page.wait_for_load_state("networkidle", timeout=60_000)
+            page.wait_for_timeout(3000)
+            for locator in navigable_review_links(page):
+                try:
+                    if locator.count():
+                        locator.first.click(timeout=60_000)
+                        clicked = True
+                        break
+                except Exception:
+                    continue
+
+        if not clicked:
+            raise PWTimeout("Could not find the Review Management navigation item in the dashboard.")
+
+        page.wait_for_load_state("networkidle", timeout=60_000)
+        page.wait_for_timeout(3000)
+        page.screenshot(path="output/after_menu_click.png")
 
         # --- 3. Make sure "All Locations" is selected ---
         log("Confirming all locations are selected...")
@@ -124,7 +141,7 @@ def main() -> int:
             apply_btn.first.click(timeout=60_000)
         else:
             page.keyboard.press("Escape")
-        page.wait_for_load_state("networkidle", timeout=30_000)
+        page.wait_for_load_state("networkidle", timeout=60_000)
 
         # --- 4. Set the date filter to "yesterday only" ---
         log("Setting date filter...")
@@ -140,7 +157,7 @@ def main() -> int:
         date_btn.first.click(timeout=60_000)
 
         page.get_by_role("button", name="Apply Filter").first.click(timeout=60_000)
-        page.wait_for_load_state("networkidle", timeout=30_000)
+        page.wait_for_load_state("networkidle", timeout=60_000)
 
         # --- 5. Export ---
         log("Triggering export...")
