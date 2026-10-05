@@ -1,16 +1,9 @@
-# RightChoice → Google Sheets Daily Sync
-# Runs every day at 6:00 AM IST (= 00:30 UTC)
-# Requires these GitHub Secrets to be set on the repo:
-#   RIGHTCHOICE_EMAIL            - login email for dashboard.rightchoice.ai
-#   RIGHTCHOICE_PASSWORD         - login password
-#   GOOGLE_SERVICE_ACCOUNT_JSON  - full contents of the service account JSON key
-
 name: RightChoice Daily Review Sync
 
 on:
   schedule:
-    - cron: "30 0 * * *"   # 00:30 UTC = 06:00 AM IST
-  workflow_dispatch:        # lets you trigger manually from the GitHub UI anytime
+    - cron: "30 0 * * *"
+  workflow_dispatch:
 
 jobs:
   sync:
@@ -25,7 +18,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-         
 
       - name: Install Python dependencies
         run: |
@@ -50,10 +42,10 @@ jobs:
         run: |
           python upload_to_sheets.py
 
-      - name: Upload CSV as run artifact (for debugging)
+      - name: Upload screenshots and CSV as artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: reviews-${{ github.run_id }}
-          path: ./output/reviews_yesterday.csv
+          name: debug-${{ github.run_id }}
+          path: ./output/
           retention-days: 7
