@@ -38,6 +38,21 @@ def date_button_text(d: date) -> str:
     return f"{d.day} {d.strftime('%B')} {d.year}"
 
 
+def click_with_retry(page, locator, *, timeout: int = 60_000, retries: int = 3):
+    """Retry a click when the page is slow or React re-renders menu content."""
+    last_error = None
+    for attempt in range(retries):
+        try:
+            locator.first.wait_for(state="visible", timeout=timeout)
+            locator.first.click(timeout=timeout)
+            return True
+        except Exception as exc:  # noqa: BLE001 - keep retry logic simple for flaky UI
+            last_error = exc
+            log(f"Click attempt {attempt + 1}/{retries} failed for selector {locator}; retrying...")
+            page.wait_for_timeout(2000)
+    raise last_error
+
+
 def main() -> int:
     email = os.environ.get("RIGHTCHOICE_EMAIL")
     password = os.environ.get("RIGHTCHOICE_PASSWORD")
@@ -64,62 +79,77 @@ def main() -> int:
         page.get_by_placeholder("Email Address").fill(email)
         page.get_by_placeholder("Password").fill(password)
         page.get_by_role("button", name="Sign In").click()
+        page.wait_for_load_state("networkidle", timeout=30_000)
         page.wait_for_timeout(5000)
         page.screenshot(path="output/after_login.png")
 
         # --- 2. Navigate to Reviews Management -> Review Management ---
         log("Navigating to Review Management...")
-        page.get_by_text("Reviews Management", exact=True).first.click()
+        menu_item = page.locator("button, a, div, li").filter(has_text="Reviews Management")
+        tab_item = page.locator("button, a, div, li").filter(has_text="Review Management")
+
+        try:
+            click_with_retry(page, menu_item)
+        except Exception:
+            page.reload()
+            page.wait_for_load_state("networkidle", timeout=30_000)
+            click_with_retry(page, menu_item)
+
         page.wait_for_timeout(2000)
         page.screenshot(path="output/after_menu_click.png")
-        page.get_by_text("Review Management", exact=True).first.click()
-        page.wait_for_load_state("networkidle")
+
+        try:
+            click_with_retry(page, tab_item)
+        except Exception:
+            page.get_by_role("tab", name=re.compile(r"^Review Management")).first.click(timeout=60_000)
+
+        page.wait_for_load_state("networkidle", timeout=30_000)
         page.wait_for_timeout(3000)
 
         # Some installs land on "Dashboard & Sentiment Analysis" first;
         # make sure the "Review Management" tab is the active one.
         review_mgmt_tab = page.get_by_role("tab", name=re.compile(r"^Review Management"))
         if review_mgmt_tab.count():
-            review_mgmt_tab.first.click()
-            page.wait_for_load_state("networkidle")
+            review_mgmt_tab.first.click(timeout=60_000)
+            page.wait_for_load_state("networkidle", timeout=30_000)
 
         # --- 3. Make sure "All Locations" is selected ---
         log("Confirming all locations are selected...")
-        page.get_by_text(re.compile(r"Locations Selected")).first.click()
+        page.get_by_text(re.compile(r"Locations Selected")).first.click(timeout=60_000)
         all_locations_checkbox = page.get_by_role("checkbox", name=re.compile("All Locations"))
         if all_locations_checkbox.count() and not all_locations_checkbox.first.is_checked():
-            all_locations_checkbox.first.click()
+            all_locations_checkbox.first.click(timeout=60_000)
         apply_btn = page.get_by_role("button", name=re.compile(r"^(Select|Apply) "))
         if apply_btn.count():
-            apply_btn.first.click()
+            apply_btn.first.click(timeout=60_000)
         else:
             page.keyboard.press("Escape")
-        page.wait_for_load_state("networkidle")
+        page.wait_for_load_state("networkidle", timeout=30_000)
 
         # --- 4. Set the date filter to "yesterday only" ---
         log("Setting date filter...")
-        page.get_by_text("All Time", exact=True).first.click()
-        page.get_by_role("radio", name="Pick Date Range").click()
+        page.get_by_text("All Time", exact=True).first.click(timeout=60_000)
+        page.get_by_role("radio", name="Pick Date Range").click(timeout=60_000)
 
         date_btn = page.get_by_role("button", name=day_label, exact=True)
         if not date_btn.count():
             prev_arrow = page.locator("button").filter(has_text=re.compile("^$")).first
-            prev_arrow.click()
+            prev_arrow.click(timeout=60_000)
             date_btn = page.get_by_role("button", name=day_label, exact=True)
-        date_btn.first.click()
-        date_btn.first.click()
+        date_btn.first.click(timeout=60_000)
+        date_btn.first.click(timeout=60_000)
 
-        page.get_by_role("button", name="Apply Filter").first.click()
-        page.wait_for_load_state("networkidle")
+        page.get_by_role("button", name="Apply Filter").first.click(timeout=60_000)
+        page.wait_for_load_state("networkidle", timeout=30_000)
 
         # --- 5. Export ---
         log("Triggering export...")
-        page.get_by_role("button", name="Export CSV").first.click()
+        page.get_by_role("button", name="Export CSV").first.click(timeout=60_000)
         export_submit = page.get_by_role("button", name=re.compile(r"^Export CSV For"))
-        export_submit.wait_for(state="visible")
+        export_submit.wait_for(state="visible", timeout=60_000)
 
         with page.expect_download(timeout=60_000) as download_info:
-            export_submit.click()
+            export_submit.click(timeout=60_000)
         download = download_info.value
         download.save_as(str(output_path))
         log(f"Saved CSV to {output_path}")
