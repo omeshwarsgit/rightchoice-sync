@@ -66,6 +66,44 @@ def find_review_management_menu(page):
     return page.locator("button, a, li, div").filter(has_text=re.compile(r"Reviews? Management", re.I))
 
 
+def click_sidebar_review_management(page):
+    """Click the parent/child sidebar items for the duplicated Review Management labels."""
+    # First click the parent menu item (the left-side accordion item)
+    parent_candidates = [
+        page.get_by_role("button", name=re.compile(r"^Reviews? Management$", re.I)),
+        page.get_by_role("link", name=re.compile(r"^Reviews? Management$", re.I)),
+        page.get_by_text(re.compile(r"^Reviews? Management$", re.I), exact=True),
+        page.locator("button, a, div").filter(has_text=re.compile(r"^Reviews? Management$", re.I)),
+    ]
+    parent = next((loc for loc in parent_candidates if loc.count()), None)
+    if parent is None:
+        raise RuntimeError("Could not find parent Reviews Management menu item in left sidebar")
+
+    click_with_retry(page, parent)
+    page.wait_for_timeout(1500)
+
+    # Then click the child submenu item; if duplicates exist, prefer the second match.
+    child_candidates = [
+        page.get_by_role("button", name=re.compile(r"^Review Management$", re.I)),
+        page.get_by_role("link", name=re.compile(r"^Review Management$", re.I)),
+        page.get_by_text(re.compile(r"^Review Management$", re.I), exact=True),
+    ]
+    child = next((loc for loc in child_candidates if loc.count()), None)
+    if child is not None:
+        if child.count() > 1:
+            child.nth(1).click(timeout=60_000)
+        else:
+            child.first.click(timeout=60_000)
+        return
+
+    # Fallback: click the second text match if the parent and child share the same label.
+    matches = page.get_by_text(re.compile(r"Review Management", re.I), exact=False)
+    if matches.count() > 1:
+        matches.nth(1).click(timeout=60_000)
+    else:
+        matches.first.click(timeout=60_000)
+
+
 def main() -> int:
     email = os.environ.get("RIGHTCHOICE_EMAIL")
     password = os.environ.get("RIGHTCHOICE_PASSWORD")
@@ -99,33 +137,24 @@ def main() -> int:
 
         # --- 2. Navigate to Reviews Management -> Review Management ---
         log("Navigating to Review Management...")
-        menu_item = find_review_management_menu(page)
-
         try:
-            click_with_retry(page, menu_item)
+            click_sidebar_review_management(page)
         except Exception:
             page.reload()
             page.wait_for_load_state("networkidle", timeout=60_000)
-            click_with_retry(page, menu_item)
+            click_sidebar_review_management(page)
 
         page.wait_for_timeout(2000)
         page.screenshot(path="output/after_menu_click.png")
 
+        # Some installs land on a different dashboard tab first; if the Review Management tab exists,
+        # make sure it's active before proceeding.
         tab_item = page.get_by_role("tab", name=re.compile(r"Review Management", re.I))
         if tab_item.count():
             tab_item.first.click(timeout=60_000)
-        else:
-            page.get_by_text(re.compile(r"Review Management", re.I), exact=False).first.click(timeout=60_000)
 
         page.wait_for_load_state("networkidle", timeout=60_000)
         page.wait_for_timeout(3000)
-
-        # Some installs land on "Dashboard & Sentiment Analysis" first;
-        # make sure the "Review Management" tab is the active one.
-        review_mgmt_tab = page.get_by_role("tab", name=re.compile(r"^Review Management", re.I))
-        if review_mgmt_tab.count():
-            review_mgmt_tab.first.click(timeout=60_000)
-            page.wait_for_load_state("networkidle", timeout=60_000)
 
         # --- 3. Make sure "All Locations" is selected ---
         log("Confirming all locations are selected...")
