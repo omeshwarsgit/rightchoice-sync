@@ -1,0 +1,59 @@
+# RightChoice → Google Sheets Daily Sync
+# Runs every day at 6:00 AM IST (= 00:30 UTC)
+# Requires these GitHub Secrets to be set on the repo:
+#   RIGHTCHOICE_EMAIL            - login email for dashboard.rightchoice.ai
+#   RIGHTCHOICE_PASSWORD         - login password
+#   GOOGLE_SERVICE_ACCOUNT_JSON  - full contents of the service account JSON key
+
+name: RightChoice Daily Review Sync
+
+on:
+  schedule:
+    - cron: "30 0 * * *"   # 00:30 UTC = 06:00 AM IST
+  workflow_dispatch:        # lets you trigger manually from the GitHub UI anytime
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          pip install playwright gspread google-auth
+
+      - name: Install Playwright browsers
+        run: |
+          playwright install chromium --with-deps
+
+      - name: Export reviews from RightChoice
+        env:
+          RIGHTCHOICE_EMAIL: ${{ secrets.RIGHTCHOICE_EMAIL }}
+          RIGHTCHOICE_PASSWORD: ${{ secrets.RIGHTCHOICE_PASSWORD }}
+          OUTPUT_CSV_PATH: ./output/reviews_yesterday.csv
+        run: |
+          python export_rightchoice_reviews.py
+
+      - name: Upload rows to Google Sheets
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          INPUT_CSV_PATH: ./output/reviews_yesterday.csv
+        run: |
+          python upload_to_sheets.py
+
+      - name: Upload CSV as run artifact (for debugging)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reviews-${{ github.run_id }}
+          path: ./output/reviews_yesterday.csv
+          retention-days: 7
